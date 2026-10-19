@@ -72,8 +72,30 @@ func filter(rep *Report, min Severity) {
 	rep.Findings = kept
 }
 
-func printText(w io.Writer, target string, rep *Report) {
-	fmt.Fprintf(w, "skillisus: %s (%d files)\n\n", target, rep.Files)
+var sevColors = map[Severity]string{Critical: "1;37;41", High: "1;31", Medium: "33", Low: "36", Info: "90"}
+
+type painter bool
+
+func (p painter) c(code, s string) string {
+	if !p {
+		return s
+	}
+	return "\x1b[" + code + "m" + s + "\x1b[0m"
+}
+
+// useColor reports whether w is a terminal and NO_COLOR is unset.
+func useColor(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok || os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+func printText(w io.Writer, target string, rep *Report, color bool) {
+	p := painter(color)
+	fmt.Fprintf(w, "%s %s (%d files)\n\n", p.c("1", "skillisus:"), target, rep.Files)
 	counts := map[Severity]int{}
 	for _, f := range rep.Findings {
 		counts[f.Severity]++
@@ -81,23 +103,31 @@ func printText(w io.Writer, target string, rep *Report) {
 		if f.Line > 0 {
 			loc = fmt.Sprintf("%s:%d", f.File, f.Line)
 		}
-		fmt.Fprintf(w, "%-8s %-16s %-22s %s\n", f.Severity, f.Category, f.Rule, loc)
+		fmt.Fprintf(w, "%s %s %s %s\n", p.c(sevColors[f.Severity], fmt.Sprintf("%-8s", f.Severity)),
+			p.c("35", fmt.Sprintf("%-16s", f.Category)), fmt.Sprintf("%-22s", f.Rule), p.c("1", loc))
 		fmt.Fprintf(w, "         %s\n", f.Desc)
 		if f.Match != "" {
-			fmt.Fprintf(w, "         > %s\n", f.Match)
+			fmt.Fprintf(w, "         %s\n", p.c("2", "> "+f.Match))
 		}
 	}
 	if len(rep.Deps) > 0 {
-		fmt.Fprintf(w, "\nDependencies (%d):\n", len(rep.Deps))
+		fmt.Fprintf(w, "\n%s\n", p.c("1", fmt.Sprintf("Dependencies (%d):", len(rep.Deps))))
 		for _, d := range rep.Deps {
-			fmt.Fprintf(w, "  %-5s %s %s  [%s]\n", d.Ecosystem, d.Name, d.Version, d.File)
+			fmt.Fprintf(w, "  %-5s %s %s  %s\n", d.Ecosystem, d.Name, d.Version, p.c("2", "["+d.File+"]"))
 		}
 	}
 	if len(rep.Hosts) > 0 {
-		fmt.Fprintf(w, "\nHosts referenced (%d):\n  %s\n", len(rep.Hosts), strings.Join(rep.Hosts, "\n  "))
+		fmt.Fprintf(w, "\n%s\n  %s\n", p.c("1", fmt.Sprintf("Hosts referenced (%d):", len(rep.Hosts))), strings.Join(rep.Hosts, "\n  "))
 	}
-	fmt.Fprintf(w, "\nSummary: %d critical, %d high, %d medium, %d low, %d info\n",
-		counts[Critical], counts[High], counts[Medium], counts[Low], counts[Info])
+	var parts []string
+	for _, sev := range []Severity{Critical, High, Medium, Low, Info} {
+		part := fmt.Sprintf("%d %s", counts[sev], strings.ToLower(sev.String()))
+		if counts[sev] > 0 {
+			part = p.c(sevColors[sev], part)
+		}
+		parts = append(parts, part)
+	}
+	fmt.Fprintf(w, "\n%s %s\n", p.c("1", "Summary:"), strings.Join(parts, ", "))
 }
 
 func run(args []string, stdout io.Writer) (int, error) {
@@ -142,7 +172,7 @@ func run(args []string, stdout io.Writer) (int, error) {
 			return 1, err
 		}
 	} else {
-		printText(stdout, fs.Arg(0), rep)
+		printText(stdout, fs.Arg(0), rep, useColor(stdout))
 	}
 	for _, f := range rep.Findings {
 		if f.Severity >= failOn {

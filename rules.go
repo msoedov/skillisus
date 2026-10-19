@@ -82,6 +82,8 @@ var rules = []Rule{
 	// execution / obfuscation
 	rule("exec-pipe-shell", "exec", Critical, "remote script piped to shell", `(curl|wget)[^|\n]*\|\s*(sudo\s+)?(ba|z)?sh\b|(ba|z)?sh\s+<\(\s*(curl|wget)`),
 	rule("exec-b64", "obfuscation", High, "decodes and executes payload", `base64\s+(-d|--decode|-D)[^\n]*\|\s*(ba|z)?sh|eval\s*\(\s*(atob|Buffer\.from)|exec\(\s*(base64\.b64decode|__import__|compile)|marshal\.loads|codecs\.decode\([^)]*rot`),
+	rule("obf-escapes", "obfuscation", High, "long escaped byte sequence", `(\\x[0-9a-fA-F]{2}){8,}|(\\u[0-9a-fA-F]{4}){6,}|(%[0-9a-fA-F]{2}){12,}`),
+	rule("obf-charcode", "obfuscation", Medium, "string built from char codes", `fromCharCode\(|(chr\(\d+\)\s*\+\s*){4,}`),
 	rule("exec-dynamic", "exec", Medium, "dynamic code / shell execution", `\beval\s*[($"']|\bexec\s*\(|new Function\(|child_process|shell\s*=\s*True|os\.system\(|os\.popen\(`),
 	rule("exec-destructive", "destructive", High, "destructive command", `rm\s+-[rf]{2,}\s+(/|~|\$HOME)|\bmkfs\.|dd\s+if=[^\n]*of=/dev/|chmod\s+-R\s+777\s+/|git\s+push\s+[^\n]*--force`),
 	rule("exec-persist", "persistence", High, "persistence mechanism", `\bcrontab\s|LaunchAgents|LaunchDaemons|launchctl\s+(load|bootstrap)|systemctl\s+enable|>>?\s*~?/?\S*\.(bashrc|zshrc|bash_profile|profile)\b`),

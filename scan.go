@@ -14,6 +14,21 @@ import (
 
 const maxFileSize = 2 << 20
 
+// skipDirs are VCS, dependency, cache and build dirs that are not skill content.
+var skipDirs = map[string]bool{
+	".git": true, ".hg": true, ".svn": true, "node_modules": true, "vendor": true,
+	".venv": true, "venv": true, "__pycache__": true, ".mypy_cache": true, ".pytest_cache": true,
+	".ruff_cache": true, ".tox": true, ".idea": true, ".vscode": true, "dist": true, "build": true,
+	".next": true, ".cache": true, "target": true,
+}
+
+// skipFiles are lockfiles and OS junk full of hashes that only produce noise.
+var skipFiles = map[string]bool{
+	"package-lock.json": true, "yarn.lock": true, "pnpm-lock.yaml": true, "bun.lockb": true,
+	"uv.lock": true, "poetry.lock": true, "Pipfile.lock": true, "go.sum": true, "Cargo.lock": true,
+	"Gemfile.lock": true, "composer.lock": true, ".DS_Store": true,
+}
+
 type Finding struct {
 	Rule     string   `json:"rule"`
 	Category string   `json:"category"`
@@ -55,9 +70,12 @@ func Scan(root string) (*Report, error) {
 		}
 		rel, _ := filepath.Rel(root, path)
 		if d.IsDir() {
-			if d.Name() == ".git" {
+			if path != root && skipDirs[d.Name()] {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if skipFiles[d.Name()] {
 			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
@@ -95,6 +113,8 @@ func Scan(root string) (*Report, error) {
 
 func scanText(file, text string, hosts map[string]bool) []Finding {
 	var out []Finding
+	foreign, firstForeign, sample := 0, 0, ""
+	seenScripts := map[string]bool{}
 	for i, line := range strings.Split(text, "\n") {
 		for _, m := range urlRe.FindAllStringSubmatch(line, -1) {
 			hosts[strings.ToLower(m[1])] = true
@@ -110,6 +130,22 @@ func scanText(file, text string, hosts map[string]bool) []Finding {
 			}
 			out = append(out, Finding{Rule: r.ID, Category: r.Category, Severity: r.Sev, Desc: r.Desc, File: file, Line: i + 1, Match: truncate(snippet, 140)})
 		}
+		out = append(out, scanEncoded(file, i+1, line)...)
+		if w := homoglyphWord(line); w != "" {
+			out = append(out, Finding{Rule: "homoglyph", Category: "prompt-injection", Severity: High, Desc: "word mixes Latin with Cyrillic/Greek lookalike letters", File: file, Line: i + 1, Match: w})
+		}
+		if sc := lineScripts(line); len(sc) > 0 {
+			foreign++
+			if firstForeign == 0 {
+				firstForeign, sample = i+1, line
+			}
+			for k := range sc {
+				seenScripts[k] = true
+			}
+		}
+	}
+	if foreign > 0 {
+		out = append(out, nonLatinFinding(file, foreign, firstForeign, sample, seenScripts))
 	}
 	return out
 }
