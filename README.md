@@ -1,15 +1,21 @@
 # skillisus
 
-Static security scanner for Claude Code skills. Point it at a local skill directory or a GitHub repo and it reports risky patterns before you install the skill.
+Skillisus is a static security scanner for Claude Code skills. It examines a skill directory or a GitHub repository. It shows the dangerous patterns that it finds. Use it before you install a skill.
 
 ## Install
 
-Requires Go 1.26+ and `git` (for scanning GitHub targets).
+You must have Go 1.26 or higher. To scan a GitHub repository, you must also have `git`.
+
+To install the binary into `$GOBIN`, do this command:
 
 ```sh
-make i        # go install into $GOBIN
-# or
-make build    # builds ./bin/skillisus
+make i
+```
+
+To build the binary into `./bin/skillisus`, do this command:
+
+```sh
+make build
 ```
 
 ## Usage
@@ -27,39 +33,53 @@ skillisus https://github.com/owner/repo/tree/main/skills/pdf
 skillisus -json -min medium owner/repo > report.json
 ```
 
-GitHub targets are shallow-cloned into a temp dir (no submodules, no LFS) and removed after the scan.
+For a GitHub target, skillisus makes a shallow clone in a temporary directory. It does not get submodules or LFS files. It removes the temporary directory after the scan.
 
-| Flag | Default | Meaning |
-|------|---------|---------|
-| `-json` | off | print JSON report instead of text |
-| `-min` | `low` | hide findings below this severity: `info`, `low`, `medium`, `high`, `critical` |
-| `-fail-on` | `high` | exit 2 if any finding is at or above this severity |
+| Flag | Default | Function |
+|------|---------|----------|
+| `-json` | off | Shows the report in JSON format. |
+| `-min` | `low` | Shows only findings at this severity or higher: `info`, `low`, `medium`, `high`, `critical`. |
+| `-fail-on` | `high` | Sets exit code 2 if a finding is at this severity or higher. |
 
-Set `NO_COLOR=1` to disable colored output.
+To stop colored output, set `NO_COLOR=1`.
 
 ### Exit codes
 
-- `0` no findings at or above `-fail-on`
-- `1` usage or scan error
-- `2` findings at or above `-fail-on`
+| Code | Meaning |
+|------|---------|
+| `0` | No finding is at the `-fail-on` severity or higher. |
+| `1` | A usage error or a scan error occurred. |
+| `2` | One or more findings are at the `-fail-on` severity or higher. |
 
-## What it checks
+## Checks
 
-- **network**: curl/wget, HTTP clients (Python, JS, Go, PowerShell), raw sockets, raw IP URLs
-- **exfil**: webhook/paste/tunnel endpoints, file uploads over HTTP, DNS exfil
-- **credentials**: SSH keys, cloud and token files, keychains and browser stores, env dumps, secret env vars
-- **secret**: hardcoded AWS, GitHub, Anthropic, OpenAI, Slack, Google, Stripe keys, private keys, JWTs
-- **exec / destructive / persistence / tampering**: dangerous shell execution and system changes
-- **obfuscation**: base64/hex payloads, high-entropy tokens, non-Latin scripts and homoglyphs
-- **dependency**: npm, Python and Go deps fetched from URLs/git or not pinned
-- **skill**: `SKILL.md` without frontmatter, `allowed-tools` granting unrestricted `Bash`
-- symlinks pointing outside the skill
+Skillisus finds these items:
 
-The report also lists parsed dependencies and every host referenced in URLs. Matched secrets are redacted in output.
+| Category | Items |
+|----------|-------|
+| network | curl and wget commands, HTTP clients (Python, JS, Go, PowerShell), raw sockets, URLs with raw IP addresses |
+| exfil | Webhook, paste and tunnel endpoints, file uploads over HTTP, DNS exfiltration |
+| credentials | SSH keys, cloud credential files, token files, keychains, browser credential stores, environment dumps, secret environment variables |
+| secret | Hardcoded AWS, GitHub, Anthropic, OpenAI, Slack, Google and Stripe keys, private keys, JWTs |
+| exec, destructive, persistence, tampering | Dangerous shell commands and changes to the system |
+| obfuscation | Base64 and hex payloads, high-entropy tokens, non-Latin scripts, homoglyphs |
+| dependency | npm, Python and Go dependencies from a URL, git or a local path, dependencies without an exact version |
+| skill | A `SKILL.md` file without frontmatter, an `allowed-tools` field that gives unrestricted `Bash` |
 
-Skipped: VCS, dependency and build dirs (`.git`, `node_modules`, `.venv`, `dist`, ...), lockfiles, binary files, files over 2 MB.
+Skillisus also finds symlinks that point outside of the skill directory.
+
+The report shows a list of the dependencies. It also shows a list of all hosts in URLs. Skillisus hides the matched secrets in the report.
+
+Skillisus does not scan these items:
+
+- VCS, dependency and build directories, for example `.git`, `node_modules`, `.venv` and `dist`
+- Lockfiles
+- Binary files
+- Files that are larger than 2 MB
 
 ## CI
+
+To stop a CI job when skillisus finds a high-severity problem, do this command:
 
 ```sh
 skillisus -fail-on high ./skills || exit 1
@@ -67,7 +87,14 @@ skillisus -fail-on high ./skills || exit 1
 
 ## Development
 
+To run the tests, do this command:
+
 ```sh
 make test
+```
+
+To examine the code with `go vet`, do this command:
+
+```sh
 make lint
 ```
